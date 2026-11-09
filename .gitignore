@@ -1,0 +1,8 @@
+/target/
+/.synarch/
+*.sqlite*
+.env
+.env.*
+!.env.example
+
+/.playwright-mcp/

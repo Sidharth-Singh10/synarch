@@ -1,0 +1,29 @@
+{
+  "repository": "/absolute/path/to/project",
+  "workspace_root": "/absolute/path/to/synarch-worktrees",
+  "max_iterations": 3,
+  "limits": {
+    "worker_timeout_seconds": 900,
+    "run_timeout_seconds": 3600,
+    "max_agent_launches": 30,
+    "max_attempts_per_stage": 3
+  },
+  "checks": [
+    {
+      "name": "tests",
+      "argv": ["cargo", "test", "--locked"],
+      "timeout_seconds": 300
+    },
+    {
+      "name": "lint",
+      "argv": ["cargo", "clippy", "--locked", "--all-targets", "--", "-D", "warnings"],
+      "timeout_seconds": 300
+    }
+  ],
+  "agents": {
+    "jury": { "agent": "synarch-jury", "model": null },
+    "actor": { "agent": "synarch-actor", "model": null },
+    "critic": { "agent": "synarch-critic", "model": null },
+    "qa": { "agent": "synarch-qa", "model": null }
+  }
+}

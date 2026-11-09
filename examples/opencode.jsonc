@@ -1,0 +1,31 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Merge these entries into your configuration; do not overwrite existing settings.
+  // API-created worker sessions use all-mode profiles, not subagent-only profiles.
+  "agents": {
+    "synarch-jury": {
+      "mode": "all",
+      "description": "Makes evidence-based technical plans and acceptance decisions",
+      "steps": 24,
+      "permissions": [{ "action": "*", "resource": "*", "effect": "deny" }]
+    },
+    "synarch-actor": {
+      "mode": "all",
+      "description": "Implements controller-assigned changes and tests in an isolated worktree",
+      "steps": 32,
+      "permissions": [{ "action": "*", "resource": "*", "effect": "deny" }]
+    },
+    "synarch-critic": {
+      "mode": "all",
+      "description": "Independently reviews snapshots without modifying source",
+      "steps": 24,
+      "permissions": [{ "action": "*", "resource": "*", "effect": "deny" }]
+    },
+    "synarch-qa": {
+      "mode": "all",
+      "description": "Independently verifies accepted behavior in a separate worktree",
+      "steps": 32,
+      "permissions": [{ "action": "*", "resource": "*", "effect": "deny" }]
+    }
+  }
+}
