@@ -1123,7 +1123,7 @@ body.drawer-open, body.agents-open { overflow: hidden; }
   .workspace { min-height: 0; }
   .topbar { padding-top: 16px; }
   .topbar h1 { font-size: clamp(23px, 5.6vw, 32px); max-width: 20ch; }
-  .run-meta { max-height: 3.1em; overflow: hidden; }
+  .run-meta { max-height: none; overflow: visible; }
   .agents-toggle { display: inline-flex; align-items: center; gap: 6px; }
   .agents {
     position: fixed;

@@ -533,15 +533,20 @@
 
   function orchestratorCard(active) {
     const live = active.busy || active.status === "thinking";
+    const coordinating = !live && active.status === "working";
     const card = el("article", `agent ${agentStateClass(live, null)}`);
     const role = el("div", "agent-role");
     role.appendChild(el("strong", "", "Orchestrator"));
-    role.appendChild(el("span", "agent-state", live ? "running" : active.run ? "idle" : "planning"));
+    role.appendChild(
+      el("span", "agent-state", live ? "running" : coordinating ? "coordinating" : active.run ? "idle" : "planning"),
+    );
     card.appendChild(role);
     card.appendChild(el("p", "agent-task", active.run ? active.run.task : "Planning a new run"));
     const now = el("div", "agent-now");
-    now.appendChild(el("span", "tool-name", live ? "now" : "state"));
-    now.appendChild(el("span", "target", live ? "coordinating the run" : statusLabel(active.status)));
+    now.appendChild(el("span", "tool-name", live || coordinating ? "now" : "state"));
+    now.appendChild(
+      el("span", "target", live ? "coordinating the run" : coordinating ? "background agents running" : statusLabel(active.status)),
+    );
     card.appendChild(now);
     const meta = el("div", "agent-meta");
     meta.appendChild(el("span", "", active.session.id ? shortId(active.session.id) : ""));
