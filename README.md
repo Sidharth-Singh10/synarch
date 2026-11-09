@@ -16,11 +16,11 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/console-run.png" width="100%" alt="Synarch console showing a confirmed run, live Jury, Actor, Critic and QA subagents, and the worktree diff">
+  <img src="docs/images/console-run.png" width="100%" alt="Synarch console showing a confirmed run, live Jury, Actor, Critic and QA subagents, and the isolated worktree path">
 </p>
 
 <p align="center">
-  <sub>One confirmed run: the orchestrator, four isolated subagents, live tool activity, and the worktree diff.</sub>
+  <sub>One confirmed run: the orchestrator, four isolated subagents, live tool activity, and the isolated worktree path.</sub>
 </p>
 
 ---
