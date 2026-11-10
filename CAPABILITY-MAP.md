@@ -1,22 +1,22 @@
 # Capability map
 
-Synarch has two local modes. The protected orchestrator console is the
-conversational native-subagent adapter; the evidence-gated controller remains a
-separate CLI workflow. Both are local-first and single-user.
+Synarch is two products. This repository is the evidence-gated controller and
+its read-only ledger dashboard. The interactive orchestrator is a separate
+OpenCode plugin (`opencode-synarch`) that runs inside the OpenCode TUI and is not
+implemented here.
 
 | Module id | Responsibility | Depends on |
 | --- | --- | --- |
-| local-access | Authorize browser access and protect reads and writes | — |
-| console-config | Private dashboard state root and generated Synarch agents | local-access |
-| workspace-chat | Dashboard workspace selection, full-capability orchestrator, direct work and delegation | local-access, console-config |
-| native-runs | Optional confirmed worktree run, native subagents, activity, transcripts, diff, interrupt | workspace-chat |
 | gated-controller | Strict Jury/Actor/Critic/QA pipeline, checks, ledger, recovery (CLI) | — |
 | read-only-dashboard | Inspect persisted gated runs from SQLite | gated-controller |
 
-The console does not use the gated controller's acceptance gates. Users select a
-workspace before chatting; ordinary tasks run directly there. All console roles
-have full tools and instruction-based responsibilities. Only optional isolated
-worktree runs require proposal confirmation. Native subagent activity, transcripts,
-diffs and interrupts work in either path. There is no hard token/cost cap or
-role-based security boundary. Worktree cleanup, automatic merge/deploy, and
-OS-level isolation remain outside this initiative.
+The controller owns every transition. Role selection, worktree isolation,
+deterministic argv checks and the acceptance gates are enforced in Rust; model
+text is untrusted structured input. It has no token or cost cap beyond the
+configured budgets and no automatic merge, push, deploy or worktree cleanup.
+
+The OpenCode plugin gives the conversational, full-capability workflow: a
+`synarch` agent, build-capable delegated workers, optional isolated worktree
+runs, and live agent activity in the TUI sidebar. It deliberately has no
+Rust-owned acceptance gate, so the controller remains the choice when acceptance
+must be mechanically enforced.

@@ -24,11 +24,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Start the protected orchestrator console; a one-time code is displayed in the terminal.
-    App {
-        #[arg(long, default_value_t = 8788)]
-        port: u16,
-    },
     /// Serve a read-only dashboard on IPv4 loopback.
     Dashboard {
         #[arg(long, default_value_t = 8787)]
@@ -115,7 +110,6 @@ fn print(value: &impl Serialize) -> Result<()> {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::App { port } => synarch::app::serve(port, &cli.db)?,
         Command::Dashboard { port } => synarch::dashboard::serve(&cli.db, port)?,
         Command::Create { config, request } => {
             let path = config
