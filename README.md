@@ -25,10 +25,11 @@ Synarch has two surfaces:
 | **Where** | `synarch` CLI | Inside the OpenCode TUI |
 | **Interface** | Typed role reports | Chat with a `synarch` agent |
 | **Acceptance** | Rust-enforced checks and gates | Human review of evidence and diff |
+| **Repo** | This repository | [`opencode-synarch`](https://github.com/Sidharth-Singh10/opencode-synarch) |
 | **State** | SQLite ledger | OpenCode sessions and metadata |
 
 The interactive console that used to live in this repository has moved to the
-separate `opencode-synarch` plugin. This repository is the controller: it is the
+[`opencode-synarch`](https://github.com/Sidharth-Singh10/opencode-synarch) plugin. This repository is the controller: it is the
 choice when acceptance must be mechanically enforced rather than judged from a
 transcript.
 
