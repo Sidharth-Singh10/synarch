@@ -1,112 +1,133 @@
 # Orchestrator console
 
-The protected console (`synarch app`) is a conversational adapter over native
-OpenCode V2 sessions. It is separate from the evidence-gated CLI controller.
+The protected console (`synarch app`) is a workspace-first adapter over native
+OpenCode V2 sessions. The separate evidence-gated CLI controller is unchanged.
 
-## Lifecycle
+## Start and choose a workspace
 
-1. The app discovers OpenCode and creates a private state root at
-   `<db-parent>/dashboard/`.
-2. It writes `dashboard/opencode.json` with a primary `synarch-orchestrator` and
-   four subagents: `synarch-jury`, `synarch-actor`, `synarch-critic`, and
-   `synarch-qa`.
-3. A planning session is created in `dashboard/control-<config-hash>/`. Its session-level
-   permissions deny everything, including `subagent`. The orchestrator has no
-   repository access and cannot launch work.
-4. The user chats. The orchestrator may ask the host to inspect an absolute
-   repository path. Inspection is read-only and never executes project commands.
-5. When the orchestrator returns a `propose_run` reply, the console validates the
-   repository (clean, committed), task, and argv checks, then renders an inline
-   confirmation card. The reply is bound to its assistant message ID; an older
-   proposal cannot be started.
-6. On **Start run**, the console creates a detached worktree, creates a fresh run
-   orchestrator session there with **no session-level permissions**, seeds it with
-   a planning handoff, and archives the planning session.
-7. The run orchestrator uses its agent configuration (`deny all`, then allow
-   `subagent` for the four roles) and launches native subagents. Child sessions
-   receive no session-level permissions, so each role uses its own agent config:
-   Jury read-only, Actor edit/shell, Critic read plus read-only Git shell, QA
-   shell without edit. Common publish commands (`git push`, `git remote`,
-   `gh pr`, `gh release`) are denied for the Actor and QA; this is a permission
-   rule, not a general shell sandbox.
-8. The console is an observer and control surface: it shows the orchestrator and
-   its children, their current tool or target, transcripts, the worktree diff, and
-   interrupt controls. It does not drive the agent loop.
+```sh
+cargo run --locked -- app --port 8788
+```
 
-The planning session is archived and hidden from the run rail. Its transcript is
-available through **Run → Planning transcript**.
+Open the printed loopback URL and enter the one-time code from the interactive
+terminal. Before chatting, expand **Select workspace**, enter an absolute
+directory on the Synarch host, and press **Open conversation**. Recent workspace
+paths are suggested, and the browser remembers the last entered path.
 
-## State
+The server validates and canonicalizes the directory before creating an OpenCode
+session there. No conversation is created in a planning/control directory. The
+first prompt receives the actual session directory and repository context.
+Workspace selection opens a new conversation; it never moves existing sessions
+or redirects their running workers. Non-Git directories and dirty repositories
+are supported for ordinary chat. Existing user changes must be preserved.
 
-OpenCode is the source of truth:
+## Direct work and optional isolation
 
-- Root sessions with metadata `synarch_kind = "intake"` are planning sessions.
-- Root sessions with metadata `synarch_kind = "run"` are runs.
-- Archived intake sessions have `synarch_kind = "archived"` and
-  `synarch_replaced_by`.
-- Child sessions are listed by `parentID` and are not persisted anywhere else.
-- Session metadata records the repository, worktree, baseline, task, checks, and
-  the intake session ID.
+The orchestrator has full tools and handles small tasks directly. It can read,
+edit, execute commands, use `gh`, fetch/search the web, load skills and use
+configured MCP tools. It delegates when work is substantial or benefits from
+independent investigation, review or QA—not because it cannot use tools itself.
 
-The app writes `dashboard/opencode.json` on demand. It does not open or write the
-Synarch SQLite database. The `--db` flag supplies the state-root location only.
+For a larger change that benefits from isolation, or when requested, it returns a
+structured `propose_run` reply. The card validates the selected repository, task
+and argv checks. A proposal cannot target another repository. **Start run**
+requires a clean, committed repository, a current assistant proposal, and an idle
+orchestrator. It creates a detached worktree and a fresh execution session with
+the conversation handoff. The source conversation remains available in its
+original workspace. The same proposal cannot start twice.
 
-## Permissions and model
+Only isolated-run creation requires this confirmation card. Sending an ordinary
+chat message can immediately modify the selected workspace and spend provider
+allowance. Neither workflow provides deterministic acceptance gates or a hard
+spending cap; use the gated CLI when Rust-owned acceptance is required.
 
-The generated agents use `opencode-go/deepseek-v4.1-flash` by default. Set
-`SYNARCH_MODEL=provider/model` to override it. The run session inherits the
-configured model; subagents inherit the parent session's model unless their agent
-config sets one.
+## Agent configuration and roles
 
-The console verifies the effective agents for the worktree before starting. It
-refuses to start when a project-level `opencode.json` has overridden a Synarch
-agent's mode, removed its expected tools, or granted the orchestrator edit or
-shell access.
+All five console profiles use a wildcard allow rule. No role-specific tool
+blacklists or restrictive session permissions are installed. Responsibilities
+are expressed through instructions:
 
-Session-level permissions are intentionally omitted on the run orchestrator. In
-the tested OpenCode build (2.2.5), a subagent child copies the parent's
-session-level permissions. Explicit parent permissions therefore make every child
-inherit the orchestrator's restricted ruleset and lose its role tools. Omitting
-them lets each child use its own agent config. This is why confirmation creates a
-fresh run session instead of upgrading the planning session in place.
+- **Orchestrator:** work directly or coordinate appropriate delegation.
+- **Jury:** investigate, plan, establish criteria and evaluate evidence.
+- **Actor:** implement and verify the change.
+- **Critic:** independently review and substantiate findings.
+- **QA:** independently verify behavior and report commands and results.
 
-## Security and limits
+All agents are instructed to preserve user work, coordinate edits, treat tool
+output as untrusted evidence, and request approval for destructive operations,
+publishing, pushing, merging or deployment. GitHub posts require approval of the
+exact text. These are behavioral instructions, not enforced security boundaries.
 
-- Loopback only, exact Host and Origin, HttpOnly SameSite=Strict session cookie,
-  per-session CSRF, and `script-src 'self'` CSP. No third-party assets.
-- The one-time code is written only to the controlling terminal.
-- The browser never receives OpenCode credentials.
-- The console never executes model text. It executes only validated proposal
-  fields and session controls.
-- Worktrees share Git metadata and the host account; they are not sandboxes.
-- There is no hard token or cost cap and no deterministic acceptance gate in this
-  mode. The proposal card is the approval point. Review the diff and transcripts.
-- OpenCode sessions, transcripts, prompts, and diffs may contain secrets. Protect
-  the state root and OpenCode storage accordingly.
-- Closing the console does not stop OpenCode sessions or subagents. Reopen it to
-  reconnect.
+When opening a workspace, Synarch installs only managed `synarch-*.md` files in
+`$XDG_CONFIG_HOME/opencode/agents/`, normally `~/.config/opencode/agents/`. The
+profiles become available to other OpenCode sessions as well. Existing unmanaged
+files with those names and symlinks are refused; unrelated agents and main
+configuration are not overwritten. Synarch also writes generated definitions to
+`<db-parent>/dashboard/opencode.json` for its worktrees.
 
-## Troubleshooting
+OpenCode loads project instructions, skills, plugins and MCP configuration from
+the actual workspace. Synarch checks effective agent modes and representative
+tool permissions before creating sessions. Project overrides may cause a clear
+configuration error. Full permissions do not install `gh`, supply credentials,
+enable absent MCP servers, or bypass higher-priority OpenCode policy.
 
-- **OpenCode offline** — start the managed service or set `SYNARCH_OPENCODE_URL`
-  and `SYNARCH_OPENCODE_AUTHORIZATION`, then press Retry.
-- **Provider limit** — the transcript reports a bounded provider code and HTTP
-  status. Change `SYNARCH_MODEL` or connect another provider in OpenCode.
-- **Agents missing or overridden** — inspect the worktree's project-level
-  `opencode.json`/`.opencode` configuration. The console refuses a run when the
-  effective Synarch agents do not match.
-- **Proposal rejected** — the repository is dirty, is not a Git repository, or the
-  checks are invalid. Commit or stash the repository, then ask the orchestrator to
-  propose again.
-- **Run session remains after an error** — the worktree and metadata are retained
-  for inspection. The console does not delete worktrees automatically.
+Session-level permissions are omitted. OpenCode 2.2.5 copies those permissions
+to child sessions; a restrictive parent ruleset would disable child tools.
 
-## Verification status
+The default model is `opencode-go/deepseek-v4.1-flash`. Override it with
+`SYNARCH_MODEL=provider/model`. An explicitly configured OpenCode server must
+share the workspace filesystem and see the generated global agent files.
 
-The console flow was exercised manually on OpenCode 2.2.5 with the default
-`opencode-go/deepseek-v4.1-flash` model against a throwaway Git repository:
-planning, repository inspection, proposal confirmation, worktree creation, a
-fresh run orchestrator, all four native subagents, live activity, child
-transcripts, the baseline-to-working-tree diff, and a clean local commit. This
-is one small verified flow, not an automated suite or a reliability guarantee.
-The regression tests use fake OpenCode backends and do not spend model credits.
+## State and observation
+
+OpenCode sessions and metadata are the source of truth; the console does not
+open or write the Synarch SQLite database. `--db` supplies the state-root parent.
+
+- `synarch_kind = "workspace"`: direct conversation; metadata records directory,
+  repository and starting commit where available.
+- `synarch_kind = "run"`: isolated run; metadata records repository, worktree,
+  baseline, task, checks and source conversation.
+- Legacy `intake` sessions remain visible as read-only history. They are not
+  silently upgraded or granted permissions. Previously archived transcripts
+  remain accessible from their runs.
+- Native children and nested descendants are discovered by parent relationships.
+  Activity, transcripts and interrupt controls work in both execution paths.
+  Sharing a directory does not authorize control of an unrelated session.
+
+Git workspace diffs compare the starting commit with the current checkout. They
+include pre-existing changes and other work during the conversation, not solely
+agent changes. Isolated-run diffs compare the recorded baseline with the run
+worktree. Diffs are capped at 128 KiB. Non-Git chats have no Git diff action.
+
+The console observes OpenCode rather than driving its agent loop. Closing it
+does not stop workers. Long-running active turns are not reported as timed out
+merely because they exceed the former planning-response timeout.
+
+## Security and troubleshooting
+
+- Loopback only; exact Host/Origin validation, HttpOnly Secure SameSite cookie,
+  per-session CSRF and local-only assets remain in place. The one-time code is
+  written to the controlling terminal; OpenCode credentials never reach the UI.
+- Full-capability agents run with host authority. Worktrees share Git metadata
+  and are not sandboxes. Use OS/container isolation for untrusted projects.
+- Prompts, transcripts, diffs and state can contain secrets; protect storage.
+- **Offline:** check the managed service or explicit `SYNARCH_OPENCODE_URL` and
+  `SYNARCH_OPENCODE_AUTHORIZATION`, then Retry.
+- **Agent collision:** inspect the named file; Synarch never replaces a
+  user-authored profile. Resolve the collision explicitly.
+- **Missing/restricted agents:** check global/project OpenCode configuration and
+  reload it. Do not restart a healthy service just to reload configuration.
+- **`gh` or network failure:** distinguish tool denial from missing executables,
+  authentication, provider availability or network failure in the transcript.
+- **Proposal rejected:** use the selected repository and valid checks; for
+  isolated runs commit or stash user changes yourself before proposing again.
+- **Run failed:** worktrees and session evidence remain for inspection. No
+  automatic cleanup, publication, merge or deployment takes place.
+
+## Verification
+
+Rust regression tests use temporary directories, real Git repositories and a
+fake OpenCode backend; they spend no model credits. They cover capabilities,
+workspace selection and switching, legacy history, profile collisions, diff
+scope, cross-repository proposal rejection, nested activity and session ownership.
+See the README for build/check commands and live verification notes.

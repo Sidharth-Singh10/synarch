@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>A conversational orchestrator for evidence-gated coding work.</strong><br>
-  Native OpenCode subagents · isolated worktrees · a local-first control room.
+  Workspace-first chat · full-capability agents · optional isolated worktrees.
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <sub>One confirmed run: the orchestrator, four isolated subagents, live tool activity, and the isolated worktree path.</sub>
+  <sub>One confirmed isolated run: the orchestrator, four native subagents, live tool activity, and the worktree path.</sub>
 </p>
 
 ---
@@ -31,8 +31,8 @@
 | --- | --- | --- |
 | **Start** | `synarch app` | `synarch create` + `synarch run` |
 | **Interface** | Conversation with a primary orchestrator | Strict typed role reports |
-| **Planning** | Read-only inspection, proposal card, explicit approval | Jury plan |
-| **Execution** | Native OpenCode subagents in a detached worktree | Actor → checks → Critic → Jury → QA |
+| **Workspace** | Choose a directory in the dashboard before chatting | Configured repository |
+| **Execution** | Work directly or delegate; confirm an optional isolated run | Actor → checks → Critic → Jury → QA |
 | **Acceptance** | Human review of transcripts and diff | Rust-enforced checks and acceptance gates |
 | **State** | OpenCode sessions and session metadata | SQLite ledger |
 
@@ -44,9 +44,9 @@ console does **not** use the controller's gates.
 
 ```mermaid
 flowchart LR
-  U[You] -->|chat| P[Planning orchestrator]
-  P -->|read-only inspect| R[Your repository]
-  P -->|proposal| C{Confirm?}
+  U[Choose workspace] -->|chat| P[Full-capability orchestrator]
+  P -->|small tasks directly| R[Selected workspace]
+  P -->|optional isolated proposal| C{Confirm?}
   C -->|Start run| W[Detached worktree]
   W --> O[Run orchestrator]
   O --> J[Jury]
@@ -57,28 +57,27 @@ flowchart LR
   Q -->|checks| W
 ```
 
-1. **Talk.** Tell the orchestrator the repository, the task, and how you want it
-   verified. It can inspect the repository without executing anything.
-2. **Confirm.** The orchestrator returns a structured proposal. Synarch shows it
-   as a card with the repository, task, checks, agents, and isolation. Nothing is
-   created or started until you press **Start run**.
-3. **Watch.** Synarch creates a detached worktree and a fresh run orchestrator.
-   The orchestrator launches the native Jury, Actor, Critic, and QA subagents.
-   The agents rail shows every session, current tool or target, model, duration,
-   and outcome.
-4. **Review.** Open any agent's transcript. Read the baseline-to-working-tree
-   diff. Interrupt one subagent or the whole run. The planning transcript stays
-   available under **Run → Planning transcript**.
+1. **Choose.** Open **Select workspace**, enter an absolute directory on the
+   Synarch host, and press **Open conversation**. The first prompt runs there.
+   Recent workspace paths are suggested; changing workspace creates a new chat.
+2. **Talk.** The orchestrator can research online, use `gh`, edit, and run checks
+   itself. Small tasks do not require subagents or a proposal card.
+3. **Delegate or isolate.** Larger work can use Jury, Actor, Critic and QA. Ask
+   for an isolated run when changes should happen in a detached worktree; that
+   path still requires confirmation through **Start run**.
+4. **Review.** Inspect tool activity, transcripts and diffs, or interrupt active
+   workers. Direct-workspace diffs include pre-existing edits and other work
+   since the conversation's starting commit—not just agent changes.
 
 Screenshots use a fictional repository and mocked session data.
 
-### Planning and confirmation
+### Workspace selection and confirmation
 
-![Synarch planning view with the planning workspace and a run proposal](docs/images/console-planning.png)
+![Synarch workspace selector and optional isolated-run proposal](docs/images/console-planning.png)
 
-*The planning orchestrator runs in Synarch's control workspace, not your
-repository. The workspace path is shown in the header. Your checkout is untouched
-until you confirm.*
+*Select your workspace before chatting. The orchestrator has full tools from the
+first prompt. Confirmation applies to creating an isolated run, not to ordinary
+workspace tasks.*
 
 ### Inside a confirmed run
 
@@ -104,41 +103,42 @@ Large diffs are capped at 128 KiB.*
   <sub>The main conversation stays first. Agents open in a sheet with a backdrop and focus trap.</sub>
 </p>
 
-## Why it is safe to point at a repository
+## Execution and trust
 
-- **Planning is permission-denied.** The planning orchestrator has no shell or
-  edit tools. It cannot touch your checkout; Synarch performs bounded read-only
-  inspection on its behalf.
-- **Nothing starts without approval.** The proposal is bound to the assistant
-  message you saw. An old proposal cannot be started; the card is the approval
-  point for provider spend.
-- **Work is isolated.** A run gets a detached Git worktree at the recorded
-  baseline. The original repository stays clean.
-- **Roles have different tools.** Jury is read-only. Actor can edit and run
-  commands. Critic gets read plus read-only Git inspection. QA can run checks but
-  cannot edit.
-- **Publishing is denied.** `git push`, `git remote`, `gh pr`, and `gh release`
-  are denied for the Actor and QA.
-- **No automatic merge, push, deploy, or worktree cleanup.** Review the diff and
-  merge through your own release process.
-
-The console is not a sandbox. Worktrees share Git metadata and the host account,
-and agents run with host authority. See [limits](#limits-and-trust-boundary).
+- **Workspace first.** Each conversation is bound to its selected directory;
+  opening another workspace does not move existing conversations or workers.
+- **Direct work is direct.** Agents can modify your checkout immediately when
+  you request a task. Existing changes are allowed; agents are instructed to
+  preserve them. This is not a sandbox or a hard safety guarantee.
+- **Isolation is optional and explicit.** A confirmed isolated run gets a
+  detached worktree at the recorded baseline. Its proposal must match the
+  conversation's repository, which must be clean and committed at that point.
+- **Equal capabilities, different responsibilities.** All console roles have
+  full tools. Instructions govern planning, implementation, review and QA;
+  publishing and destructive operations require approval by instruction, not
+  a command blacklist.
+- **No automatic merge, push, deploy, or worktree cleanup.** Review evidence and
+  use your own release process. Worktrees share Git metadata and host authority.
 
 ## Agents
 
-| Agent | Mode | What it can do |
+| Agent | Mode | Responsibility |
 | --- | --- | --- |
-| **Planning orchestrator** | primary | Ask the host to inspect a repository; propose a run. No shell or edit tools. |
-| **Run orchestrator** | primary | Delegate to the four Synarch subagents. No edit or shell tools itself. |
-| **Jury** | subagent | Read, glob, and grep. Map the problem, plan, and review evidence. |
-| **Actor** | subagent | Read, edit, and shell. Implement, test, and create a local Conventional Commit. |
-| **Critic** | subagent | Read plus read-only Git commands. Independent review. |
-| **QA** | subagent | Read and shell. Run the agreed checks independently; no edits. |
+| **Orchestrator** | primary | Handle small tasks directly; delegate or propose isolation when useful. |
+| **Jury** | subagent | Research, plan, establish acceptance criteria, and evaluate evidence. |
+| **Actor** | subagent | Implement and verify changes; create local commits in isolated runs. |
+| **Critic** | subagent | Independently review changes and substantiate findings. |
+| **QA** | subagent | Independently verify behavior and report exact results. |
 
-Generated agent definitions live at `<db-parent>/dashboard/opencode.json`.
-Planning workspaces are versioned by config hash so an upgrade never reuses a
-stale OpenCode agent cache.
+All roles have shell, edit, web, skills, and configured MCP access. Permissions
+do not install tools, authenticate `gh`, or override higher-level OpenCode policy.
+
+Synarch installs managed `synarch-*.md` profiles in
+`$XDG_CONFIG_HOME/opencode/agents/` (normally `~/.config/opencode/agents/`) so
+they are available in selected projects. These names are visible to other
+OpenCode sessions too. Unrelated configuration is preserved; existing unmanaged
+files with those names cause an error rather than being overwritten. Generated
+worktree configuration also lives at `<db-parent>/dashboard/opencode.json`.
 
 ## Quick start
 
@@ -146,7 +146,8 @@ Requirements:
 
 - Rust 1.89+ and Git
 - A running OpenCode **V2** server with a provider connected
-- A clean target Git repository with an initial commit and Git author identity
+- An existing directory; isolated runs additionally require a clean Git
+  repository with an initial commit and Git author identity
 - A modern browser with JavaScript for the console
 - Linux is the initial tested platform
 
@@ -160,9 +161,9 @@ Open the printed loopback URL and enter the one-time code shown in the terminal.
 It expires after five minutes or ten failed attempts. A browser session lasts one
 hour and is invalidated when the app stops.
 
-Then tell the orchestrator what to do. For example:
+Choose your workspace in the dashboard, then describe the task. For example:
 
-> Work in `/srv/work/tideline/ledger`. Fix the audit-log race that drops an entry
+> Fix the audit-log race that drops an entry
 > when two writers flush at once. Keep the public API stable, add a concurrency
 > regression test, and use `cargo test --locked`.
 
@@ -187,12 +188,14 @@ SQLite database. The default `--db` path is
 ```text
 dashboard/
   opencode.json      generated Synarch agent definitions
-  control-<hash>/    planning sessions for this generated config
   worktrees/         one isolated worktree per run
 ```
 
 OpenCode sessions and metadata are the run registry and conversation store.
 Closing the console does not stop OpenCode sessions or subagents already running.
+Legacy planning conversations remain readable; open a new workspace conversation
+to use the full-capability workflow. If using an explicit OpenCode server, it
+must share the host filesystem and see these agent files and workspace paths.
 
 ## The evidence-gated controller
 
@@ -259,19 +262,23 @@ cargo audit
 ```
 
 Tests use real temporary Git repositories and SQLite databases. Console tests use
-a fake OpenCode backend and spend no model credits. A manual live console run was
-completed on OpenCode 2.2.5: planning, inspection, proposal confirmation, worktree
-creation, all four native subagents, transcripts, diff, and a clean local commit.
-That is one verified flow, not a reliability guarantee. The controller live tests
-are documented in [the smoke-test report](docs/live-smoke-test.md).
+a fake OpenCode backend and spend no model credits. On OpenCode 2.2.5, a live
+workspace smoke test verified direct editing without subagents, web fetching,
+read-only `gh`, Jury shell/network access, transcripts, diffs and workspace
+switching. The earlier isolated-run flow exercised all four roles and a clean
+local commit. These are bounded smoke tests, not reliability guarantees. The
+controller live tests are documented in [the smoke-test report](docs/live-smoke-test.md).
 
 ## Limits and trust boundary
 
 - The console has **no deterministic acceptance gate**. The QA subagent runs the
   agreed checks and the UI shows evidence, but the orchestrator decides when work
   is done. Use the gated controller when you need Rust-owned acceptance.
-- There is **no hard token or cost cap** in the console. The proposal card is the
-  approval point; a run can spend provider allowance.
+- There is **no hard token or cost cap** in the console. Sending a message can
+  immediately execute tools and spend provider allowance. Proposal confirmation
+  applies only to isolated runs.
+- Role instructions are **not security boundaries**. Every console agent can
+  technically edit files and execute commands, including network operations.
 - **Worktrees are not sandboxes.** Agents share Git metadata and the host account.
   Use separate OS identities or containers before running untrusted repositories.
 - The read-only database dashboard has **no authentication** and binds to loopback.
