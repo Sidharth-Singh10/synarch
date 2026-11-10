@@ -36,10 +36,17 @@
   const tabRun = $("tab-run");
   const panelChat = $("panel-chat");
   const panelRun = $("panel-run");
+  const workspacePicker = $("workspace-picker");
+  const workspacePath = $("workspace-path");
+  const workspaceError = $("workspace-error");
+  const openWorkspaceBtn = $("open-workspace");
+  workspacePath.value = localStorage.getItem("synarch-workspace") || "";
 
   let state = null;
   let selected = localStorage.getItem("synarch-selected") || "";
-  let inFlight = false;
+  let inFlight = null;
+  let openingWorkspace = false;
+  let workspaceInitialized = false;
   let pollTimer = null;
   let toastTimer = null;
   let stopping = new Set();
@@ -126,11 +133,18 @@
   }
 
   async function refresh(immediate) {
-    if (inFlight) return;
-    inFlight = true;
+    if (inFlight) {
+      if (!immediate) return;
+      await inFlight;
+      return refresh(immediate);
+    }
+    let finish;
+    inFlight = new Promise((resolve) => { finish = resolve; });
+    const requestedSelection = selected;
     try {
       const query = selected ? `?session=${encodeURIComponent(selected)}` : "";
       const next = await getJSON(`/api/state${query}`);
+      if (selected !== requestedSelection) return;
       const wasOffline = state && !state.connected;
       state = next;
       if (next.active && next.active.session) {
@@ -148,7 +162,8 @@
         setConnection(false);
       }
     } finally {
-      inFlight = false;
+      inFlight = null;
+      finish();
       schedule(immediate);
     }
   }
@@ -195,6 +210,7 @@
     }
     renderRuns();
     renderHeader();
+    renderWorkspace();
     renderTranscript();
     renderAgents();
     renderRunView();
@@ -212,7 +228,7 @@
     clear(runListEl);
     const sessions = (state.sessions || []).slice();
     if (!sessions.length) {
-      runListEl.appendChild(el("p", "rail-empty", "No runs yet. Start by telling the orchestrator what to build."));
+      runListEl.appendChild(el("p", "rail-empty", "Choose a workspace to start your first conversation."));
       return;
     }
     for (const session of sessions) {
@@ -231,7 +247,7 @@
       }
       const copy = el("span", "run-copy");
       copy.appendChild(el("span", "run-title", sessionTitle(session)));
-      const sub = el("span", "run-sub", `${session.kind === "intake" ? "Planning" : "Run"} · ${formatRelative(session.updated || session.created)}`);
+      const sub = el("span", "run-sub", `${session.kind === "intake" ? "Legacy plan" : session.kind === "workspace" ? "Workspace" : "Isolated run"} · ${formatRelative(session.updated || session.created)}`);
       copy.appendChild(sub);
       button.append(dot, copy);
       button.addEventListener("click", () => selectSession(session.id));
@@ -242,6 +258,7 @@
   function selectSession(id) {
     selected = id;
     localStorage.setItem("synarch-selected", id);
+    renderComposerState();
     closeDrawer();
     refresh(true);
   }
@@ -251,21 +268,46 @@
     if (!active) {
       eyebrowEl.textContent = "Orchestrator";
       titleEl.textContent = "Talk to the orchestrator";
-      metaEl.textContent = "Describe what you want built, fixed, or reviewed. I will inspect the repository and propose the run.";
+      metaEl.textContent = "Choose your workspace before sending the first message.";
       statusPill.dataset.status = "idle";
       statusText.textContent = "Ready";
       return;
     }
     const run = active.run;
-    eyebrowEl.textContent = run ? "Confirmed run" : "Planning";
-    titleEl.textContent = run ? sessionTitle(active.session) : "Talk to the orchestrator";
+    eyebrowEl.textContent = run ? "Isolated run" : active.kind === "workspace" ? "Workspace conversation" : "Legacy planning history";
+    titleEl.textContent = sessionTitle(active.session);
     if (run) {
       metaEl.textContent = `Repository ${run.repository} · Worktree ${run.worktree} · Baseline ${run.baseline.slice(0, 10)}`;
     } else {
-      metaEl.textContent = `Planning workspace: ${active.session.workspace || "unknown"} · This is Synarch's control directory, not your repository.`;
+      metaEl.textContent = active.kind === "workspace"
+        ? `Workspace: ${active.session.workspace} · Full tools · Direct changes happen here`
+        : `Read-only history · ${active.session.workspace || "unknown"} · Open a workspace conversation to continue.`;
     }
     statusPill.dataset.status = active.status || "idle";
     statusText.textContent = statusLabel(active.status);
+  }
+
+  function renderWorkspace() {
+    const active = state.active;
+    if (!workspaceInitialized) {
+      workspacePicker.open = !active;
+      workspaceInitialized = true;
+    }
+    $("workspace-summary").textContent = active
+      ? `Workspace · ${active.session.workspace || "unknown"} · New conversation…`
+      : "Select workspace";
+    if (!active) workspacePicker.open = true;
+    const options = $("workspace-options");
+    clear(options);
+    const paths = new Set((state.sessions || []).filter((session) => session.kind === "workspace").map((session) => session.workspace).filter(Boolean));
+    const last = localStorage.getItem("synarch-workspace");
+    if (last) paths.add(last);
+    for (const path of paths) {
+      const option = el("option");
+      option.value = path;
+      options.appendChild(option);
+    }
+    openWorkspaceBtn.disabled = !state.connected || openingWorkspace;
   }
 
   function sessionTitle(session) {
@@ -286,7 +328,7 @@
     if (active.run) {
       inner.appendChild(runStartLine(active));
     }
-    if (active.kind === "intake" && !active.messages.length && !active.busy && !active.chat_error) {
+    if (active.kind === "workspace" && !active.messages.length && !active.busy && !active.chat_error) {
       transcriptEl.appendChild(emptyState());
       newMessages.hidden = true;
       return;
@@ -332,26 +374,27 @@
 
   function emptyState() {
     const empty = el("div", "empty");
-    empty.appendChild(el("p", "eyebrow", "New run"));
+    empty.appendChild(el("p", "eyebrow", "Workspace conversation"));
     empty.appendChild(el("h2", "", "Tell me what to build."));
-    empty.appendChild(el("p", "", "Give me a repository and a task. I will inspect the project, propose checks, and ask you to confirm before any subagent starts."));
+    empty.appendChild(el("p", "", state.active ? "Ask about this project or give me a task. I can work directly, research online, or bring in subagents when useful. Ask for an isolated run when you want changes in a separate worktree." : "Select a workspace above before chatting. Your first message will run in that directory—not a separate planning folder."));
     const workspace = state.active && state.active.session ? state.active.session.workspace : null;
     if (workspace) {
       const note = el("p", "workspace-note");
-      note.appendChild(el("span", "", "Planning workspace: "));
+      note.appendChild(el("span", "", "Working in: "));
       note.appendChild(el("code", "", workspace));
-      note.appendChild(el("span", "", " — your repository is untouched until you confirm."));
+      note.appendChild(el("span", "", " — direct tasks can modify files here."));
       empty.appendChild(note);
     }
     const prompts = el("div", "prompts");
     const examples = [
-      ["Fix the failing test", "Fix the failing test in this repository. Inspect it first and propose the run."],
+      ["Fix the failing test", "Investigate and fix the failing test in this workspace, then verify the fix."],
       ["Review recent changes", "Review the most recent changes in this repository for correctness and missing tests."],
       ["Add a regression test", "Add a focused regression test for the reported bug and verify it."],
     ];
     for (const [label, text] of examples) {
       const chip = el("button", "prompt-chip", label);
       chip.type = "button";
+      chip.disabled = !state.active || state.active.kind === "intake";
       chip.addEventListener("click", () => sendText(text));
       prompts.appendChild(chip);
     }
@@ -388,7 +431,7 @@
   function proposalCard(proposal) {
     const card = el("section", "proposal");
     const head = el("div", "proposal-head");
-    head.appendChild(el("h3", "", "Confirm this run"));
+    head.appendChild(el("h3", "", "Confirm isolated run"));
     head.appendChild(el("span", "proposal-tag", proposal.valid ? "Ready to start" : "Needs attention"));
     card.appendChild(head);
     const body = el("div", "proposal-body");
@@ -406,7 +449,7 @@
       checks.appendChild(el("span", "muted", "No mandatory check proposed."));
     }
     body.appendChild(proposalRow("Checks", checks));
-    body.appendChild(proposalRow("Agents", "Jury · Actor · Critic · QA"));
+    body.appendChild(proposalRow("Delegation", "Jury · Actor · Critic · QA, when useful"));
     body.appendChild(proposalRow("Isolation", "Fresh detached Git worktree; your checkout stays untouched."));
     if (proposal.warnings && proposal.warnings.length) {
       for (const warning of proposal.warnings) body.appendChild(el("p", "proposal-warn", warning));
@@ -520,7 +563,7 @@
     agentsListEl.appendChild(orchestratorCard(active));
     for (const child of children) agentsListEl.appendChild(agentCard(child, active));
     if (!children.length) {
-      agentsListEl.appendChild(el("p", "agents-empty", active.run ? "No subagents have been launched yet." : "Confirm the run to let the orchestrator launch subagents."));
+      agentsListEl.appendChild(el("p", "agents-empty", "The orchestrator can work directly. Subagents appear when delegated work is useful."));
     }
   }
 
@@ -538,22 +581,24 @@
     const role = el("div", "agent-role");
     role.appendChild(el("strong", "", "Orchestrator"));
     role.appendChild(
-      el("span", "agent-state", live ? "running" : coordinating ? "coordinating" : active.run ? "idle" : "planning"),
+      el("span", "agent-state", live ? "running" : coordinating ? "coordinating" : active.kind === "intake" ? "history" : "idle"),
     );
     card.appendChild(role);
-    card.appendChild(el("p", "agent-task", active.run ? active.run.task : "Planning a new run"));
+    card.appendChild(el("p", "agent-task", active.run ? active.run.task : active.session.workspace));
+    const activity = active.orchestrator || {};
     const now = el("div", "agent-now");
-    now.appendChild(el("span", "tool-name", live || coordinating ? "now" : "state"));
+    now.appendChild(el("span", "tool-name", activity.tool || (live || coordinating ? "now" : "state")));
     now.appendChild(
-      el("span", "target", live ? "coordinating the run" : coordinating ? "background agents running" : statusLabel(active.status)),
+      el("span", "target", activity.target || (live ? "working on your task" : coordinating ? "background agents running" : statusLabel(active.status))),
     );
     card.appendChild(now);
     const meta = el("div", "agent-meta");
     meta.appendChild(el("span", "", active.session.id ? shortId(active.session.id) : ""));
+    if (activity.model) meta.appendChild(el("span", "", activity.model));
     if (active.run) meta.appendChild(el("span", "", `${(active.children || []).length} subagent${(active.children || []).length === 1 ? "" : "s"}`));
     card.appendChild(meta);
     const actions = el("div", "agent-actions");
-    if (active.run) {
+    if (active.session) {
       const transcript = el("button", "agent-link", "Transcript");
       transcript.type = "button";
       transcript.addEventListener("click", () => openTranscript(active.session.id, active.session.id, "Orchestrator"));
@@ -631,14 +676,16 @@
     const connected = state.connected;
     const busy = Boolean(active && (active.busy || active.status === "thinking"));
     const anyActive = Boolean(active && (active.active_sessions || []).length);
-    sendBtn.disabled = !connected || busy;
-    promptEl.disabled = !connected;
+    const switching = openingWorkspace || Boolean(active && selected !== active.session.id);
+    const writable = active && ["workspace", "run"].includes(active.kind) && !switching;
+    sendBtn.disabled = !connected || busy || !writable;
+    promptEl.disabled = !connected || !writable;
     interruptBtn.hidden = !(busy || anyActive);
     interruptBtn.disabled = !anyActive && !busy;
     if (!connected) hintEl.textContent = "OpenCode is offline. Start it, then retry.";
+    else if (switching) hintEl.textContent = "Opening the selected workspace…";
     else if (busy) hintEl.textContent = "The orchestrator is working. You can interrupt it.";
-    else if (!active) hintEl.textContent = "Enter to send · Shift+Enter for a new line";
-    else if (active.kind === "intake") hintEl.textContent = "Confirm the proposal to start the run.";
+    else if (!writable) hintEl.textContent = "Select a workspace above to open a new conversation.";
     else hintEl.textContent = "Enter to send · Shift+Enter for a new line";
   }
 
@@ -646,19 +693,36 @@
     clear(runView);
     const active = state.active;
     if (!active) {
-      runView.appendChild(el("p", "muted", "Run details appear after you confirm a plan."));
+      runView.appendChild(el("p", "muted", "Select a workspace to begin. Isolated runs remain available through a confirmed proposal."));
       return;
     }
     const run = active.run;
     if (!run) {
       const section = el("section", "run-section");
-      section.appendChild(el("h2", "", "Planning session"));
+      section.appendChild(el("h2", "", active.kind === "workspace" ? "Workspace conversation" : "Legacy planning history"));
       section.appendChild(el("p", "run-task", active.session.title));
-      section.appendChild(el("p", "notice", "No run has started. Confirm the proposal in the conversation to create an isolated worktree and launch subagents."));
+      section.appendChild(el("p", "notice", active.kind === "workspace"
+        ? "The orchestrator and subagents have full tools. Changes happen directly in this workspace. Request an isolated run for a separate worktree. Workspace diffs include pre-existing edits and other work since the starting commit."
+        : "This old planning conversation is read-only. Choose a workspace to start a fully capable conversation."));
       const detail = el("dl", "kv");
-      kvPair(detail, "Planning workspace", active.session.workspace);
-      kvPair(detail, "Repository", "not selected yet");
+      kvPair(detail, "Workspace", active.session.workspace);
+      kvPair(detail, "Repository", active.session.repository || "not a Git repository");
+      kvPair(detail, "Subagents", String((active.children || []).length));
       section.appendChild(detail);
+      const actions = el("div", "run-actions");
+      if (active.diff_available) {
+        const diff = el("button", "primary", "View workspace changes");
+        diff.type = "button";
+        diff.addEventListener("click", () => openDiff(active.session.id));
+        actions.appendChild(diff);
+      }
+      if ((active.active_sessions || []).length) {
+        const stop = el("button", "ghost", "Stop all active");
+        stop.type = "button";
+        stop.addEventListener("click", () => stopAllActive(active));
+        actions.appendChild(stop);
+      }
+      section.appendChild(actions);
       runView.appendChild(section);
       return;
     }
@@ -710,9 +774,9 @@
     copy.addEventListener("click", () => copyText(active.session.id));
     actions.appendChild(copy);
     if (run.intake_session) {
-      const planning = el("button", "ghost", "Planning transcript");
+      const planning = el("button", "ghost", "Source conversation");
       planning.type = "button";
-      planning.addEventListener("click", () => openTranscript(run.intake_session, run.intake_session, "Planning"));
+      planning.addEventListener("click", () => openTranscript(run.intake_session, run.intake_session, "Source conversation"));
       actions.appendChild(planning);
     }
     if ((active.active_sessions || []).length) {
@@ -850,7 +914,8 @@
   }
 
   async function openDiff(session) {
-    openDrawer("Changes in the run worktree", session, async (body) => {
+    const direct = state.active && state.active.session.id === session && state.active.kind === "workspace";
+    openDrawer(direct ? "Changes in the workspace" : "Changes in the run worktree", session, async (body) => {
       const data = await getJSON(`/api/diff?session=${encodeURIComponent(session)}`);
       clear(body);
       const meta = el("div", "diff-meta");
@@ -858,6 +923,7 @@
       meta.appendChild(el("span", "", data.dirty ? `${data.dirty_count} uncommitted path(s)` : "clean working tree"));
       meta.appendChild(el("span", "", "Baseline to working tree"));
       body.appendChild(meta);
+      if (data.scope === "workspace") body.appendChild(el("p", "notice", "Includes pre-existing edits and other changes since the conversation's starting commit; not an attribution of agent-only changes."));
       if (!data.diff || !String(data.diff).trim()) {
         body.appendChild(el("p", "muted", "No changes since the baseline."));
       } else {
@@ -883,6 +949,16 @@
     event.preventDefault();
     const text = promptEl.value.trim();
     if (!text) return;
+    if (openingWorkspace || (state && state.active && selected !== state.active.session.id)) {
+      showToast("Wait for the selected workspace to open.");
+      return;
+    }
+    if (!state || !state.active || !["workspace", "run"].includes(state.active.kind)) {
+      showToast("Choose a workspace before chatting.");
+      workspacePicker.open = true;
+      workspacePath.focus();
+      return;
+    }
     if (!state || !state.connected) {
       showToast("OpenCode is offline. Start it, then retry.");
       return;
@@ -906,9 +982,9 @@
     } catch (error) {
       showToast(error.message);
       promptEl.value = text;
-      } finally {
+    } finally {
       sendBtn.textContent = previous;
-      sendBtn.disabled = false;
+      renderComposerState();
     }
   }
 
@@ -952,21 +1028,43 @@
     }
   }
 
-  newRunBtn.addEventListener("click", async () => {
-    newRunBtn.disabled = true;
+  newRunBtn.addEventListener("click", () => {
+    workspacePicker.open = true;
+    workspacePath.value = state && state.active ? state.active.session.workspace || workspacePath.value : workspacePath.value;
+    workspacePath.focus();
+    workspacePath.select();
+  });
+
+  $("workspace-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const workspace = workspacePath.value.trim();
+    if (!workspace || openWorkspaceBtn.disabled) return;
+    openingWorkspace = true;
+    renderComposerState();
+    let opened = false;
+    openWorkspaceBtn.disabled = true;
+    workspaceError.hidden = true;
+    workspacePath.removeAttribute("aria-invalid");
     try {
-      const result = await post("/api/new", {});
+      const result = await post("/api/new", { workspace });
       if (result.session) {
         selected = result.session;
         localStorage.setItem("synarch-selected", selected);
+        localStorage.setItem("synarch-workspace", workspace);
         setTab("chat");
         await refresh(true);
-        promptEl.focus();
+        workspacePicker.open = false;
+        opened = true;
       }
     } catch (error) {
-      showToast(error.message);
+      workspaceError.textContent = error.message;
+      workspaceError.hidden = false;
+      workspacePath.setAttribute("aria-invalid", "true");
     } finally {
-      newRunBtn.disabled = false;
+      openingWorkspace = false;
+      openWorkspaceBtn.disabled = !state || !state.connected;
+      renderComposerState();
+      if (opened) promptEl.focus();
     }
   });
 

@@ -86,6 +86,20 @@ a { color: inherit; }
   outline-offset: 2px;
 }
 
+.workspace-picker { margin-top: 12px; font-size: 12px; min-width: 0; }
+.workspace-picker summary { cursor: pointer; color: var(--signal); font-weight: 600; overflow-wrap: anywhere; }
+.workspace-picker form { margin-top: 12px; }
+.workspace-picker label { display: block; margin-bottom: 6px; color: var(--ink-soft); }
+.workspace-fields { display: flex; gap: 8px; flex-wrap: wrap; }
+.workspace-fields input {
+  flex: 1 1 220px; min-width: 0; width: 100%; padding: 8px 12px;
+  background: var(--paper); border: 1px solid var(--line-strong); border-radius: 2px;
+  font: 12px/1.5 var(--mono);
+}
+.workspace-fields .primary { flex-shrink: 0; }
+.workspace-picker p { margin: 8px 0 0; color: var(--muted); max-width: 66ch; }
+.workspace-picker .proposal-error { color: var(--fail); }
+
 .app {
   position: relative;
   z-index: 1;

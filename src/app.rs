@@ -313,21 +313,21 @@ fn process(access: &mut Access, console: &mut Console, raw: &[u8], port: u16, no
             let Some(form) = fields(body) else {
                 return bad();
             };
-            if form.len() != 1
-                || !access.mutation_allowed(
-                    cookie,
-                    form.get("csrf").map_or("", String::as_str),
-                    now,
-                )
-            {
+            if !access.mutation_allowed(cookie, form.get("csrf").map_or("", String::as_str), now) {
                 return forbidden();
             }
-            match console.create_intake() {
+            if form.len() != 2 || !form.contains_key("workspace") {
+                return api_error(
+                    "422 Unprocessable Entity",
+                    "select a workspace before starting a conversation",
+                );
+            }
+            match console.create_workspace(&form["workspace"]) {
                 Ok(session) => json(
                     "200 OK",
                     &serde_json::json!({"ok": true, "session": session.id}),
                 ),
-                Err(error) => api_error("503 Service Unavailable", &error.to_string()),
+                Err(error) => api_error("422 Unprocessable Entity", &error.to_string()),
             }
         }
         ("POST", "/api/start") => {
@@ -721,9 +721,24 @@ mod console_api_tests {
         let backend = Arc::new(FakeApi::new());
         let mut console = Console::with_backend(&dir.path().join("state.sqlite"), backend);
         console.ensure_ready().unwrap();
-        let intake = console.create_intake().unwrap();
+        let intake = console
+            .create_workspace(dir.path().to_str().unwrap())
+            .unwrap();
         let cookie = login(&mut access, &mut console, &code, 1);
         let csrf = csrf(&mut access, &mut console, &cookie, 2);
+        for body in [
+            format!("csrf={csrf}"),
+            format!("csrf={csrf}&workspace=relative/path"),
+        ] {
+            let request = format!(
+                "POST /api/new HTTP/1.1\r\nHost: 127.0.0.1:8788\r\nOrigin: http://127.0.0.1:8788\r\nCookie: {cookie}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            assert!(
+                process(&mut access, &mut console, request.as_bytes(), 8788, 2)
+                    .starts_with("HTTP/1.1 422")
+            );
+        }
         let state = format!(
             "GET /api/state?session={} HTTP/1.1\r\nHost: 127.0.0.1:8788\r\nCookie: {cookie}\r\n\r\n",
             intake.id
@@ -736,7 +751,7 @@ mod console_api_tests {
         assert!(
             process(&mut access, &mut console, unauthorized, 8788, 2).starts_with("HTTP/1.1 403")
         );
-        let body = format!("csrf={csrf}");
+        let body = format!("csrf={csrf}&workspace={}", dir.path().display());
         let new_run = format!(
             "POST /api/new HTTP/1.1\r\nHost: 127.0.0.1:8788\r\nOrigin: http://127.0.0.1:8788\r\nCookie: {cookie}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{body}",
             body.len()

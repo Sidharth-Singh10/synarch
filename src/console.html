@@ -14,14 +14,14 @@
 <body>
   <a class="skip-link" href="#prompt">Skip to message composer</a>
   <div class="app" id="app">
-    <nav class="rail" aria-label="Runs">
+    <nav class="rail" aria-label="Conversations and runs">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-word">Synarch</span>
       </div>
       <div class="rail-heading">
-        <span>Runs</span>
-        <button class="rail-new" id="new-run" type="button" title="Start a new run">+</button>
+        <span>Conversations</span>
+        <button class="rail-new" id="new-run" type="button" aria-label="New workspace conversation" title="New workspace conversation">+</button>
       </div>
       <div class="rail-list" id="run-list" aria-label="Recent runs">
         <div class="rail-skeleton"></div>
@@ -39,6 +39,19 @@
           <p class="eyebrow" id="context-eyebrow">Orchestrator</p>
           <h1 id="run-title">Talk to the orchestrator</h1>
           <p class="run-meta" id="run-meta">Describe what you want built, fixed, or reviewed.</p>
+          <details class="workspace-picker" id="workspace-picker" open>
+            <summary id="workspace-summary">Select workspace</summary>
+            <form id="workspace-form">
+              <label for="workspace-path">Workspace directory on the Synarch host</label>
+              <div class="workspace-fields">
+                <input id="workspace-path" name="workspace" type="text" list="workspace-options" placeholder="/home/you/projects/my-app" maxlength="4096" required autocomplete="off" spellcheck="false" aria-describedby="workspace-help workspace-error">
+                <datalist id="workspace-options"></datalist>
+                <button class="primary" id="open-workspace" type="submit">Open conversation</button>
+              </div>
+              <p id="workspace-help">Creates a new conversation here. Full tool access; direct tasks can modify this directory. Existing conversations keep their workspace.</p>
+              <p class="proposal-error" id="workspace-error" role="alert" hidden></p>
+            </form>
+          </details>
         </div>
         <div class="topbar-side">
           <span class="status" id="status-pill" data-status="idle"><span class="dot"></span><span id="status-text">Ready</span></span>
@@ -62,9 +75,9 @@
           <div class="empty" id="empty">
             <p class="eyebrow">New run</p>
             <h2>Tell me what to build.</h2>
-            <p>Give me a repository and a task. I will inspect the project, propose checks, and ask you to confirm before any subagent starts.</p>
+            <p>Select a workspace above, then describe your task. The orchestrator can work directly or delegate when useful.</p>
             <div class="prompts" id="prompts">
-              <button class="prompt-chip" type="button" data-prompt="Fix the failing test in this repository. Inspect it first and propose the run.">Fix the failing test</button>
+              <button class="prompt-chip" type="button" data-prompt="Investigate and fix the failing test in this workspace, then verify the fix.">Fix the failing test</button>
               <button class="prompt-chip" type="button" data-prompt="Review the most recent changes in this repository for correctness and missing tests.">Review recent changes</button>
               <button class="prompt-chip" type="button" data-prompt="Add a focused regression test for the reported bug and verify it.">Add a regression test</button>
             </div>
@@ -73,11 +86,11 @@
         <button class="new-messages" id="new-messages" type="button" hidden>New messages</button>
         <form class="composer" id="composer">
           <label class="sr-only" for="prompt">Message the orchestrator</label>
-          <textarea id="prompt" name="prompt" rows="1" placeholder="Describe the task, repository, or ask about the run…" autocomplete="off" spellcheck="true"></textarea>
+          <textarea id="prompt" name="prompt" rows="1" placeholder="Describe the task or ask about your workspace…" autocomplete="off" spellcheck="true" disabled></textarea>
           <div class="composer-actions">
             <span class="hint" id="composer-hint">Enter to send · Shift+Enter for a new line</span>
             <button class="ghost" id="interrupt" type="button" hidden>Interrupt</button>
-            <button class="primary" id="send" type="submit">Send <span aria-hidden="true">→</span></button>
+            <button class="primary" id="send" type="submit" disabled>Send <span aria-hidden="true">→</span></button>
           </div>
         </form>
       </section>
